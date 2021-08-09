@@ -410,20 +410,15 @@ func (*ContestantService) EnqueueBenchmarkJob(e echo.Context) error {
 	if err := e.Bind(&req); err != nil {
 		return err
 	}
-	tx, err := db.Beginx()
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback()
-	if ok, err := loginRequired(e, tx, &loginRequiredOption{Team: true}); !ok {
+	if ok, err := loginRequired(e, db, &loginRequiredOption{Team: true}); !ok {
 		return wrapError("check session", err)
 	}
-	if ok, err := contestStatusRestricted(e, tx, resourcespb.Contest_STARTED, "競技時間外はベンチマークを実行できません"); !ok {
+	if ok, err := contestStatusRestricted(e, db, resourcespb.Contest_STARTED, "競技時間外はベンチマークを実行できません"); !ok {
 		return wrapError("check contest status", err)
 	}
-	team, _ := getCurrentTeam(e, tx, false)
+	team, _ := getCurrentTeam(e, db, false)
 	var jobCount int
-	err = tx.Get(
+	err := db.Get(
 		&jobCount,
 		"SELECT COUNT(*) AS `cnt` FROM `benchmark_jobs` WHERE `team_id` = ? AND `finished_at` IS NULL",
 		team.ID,
@@ -434,7 +429,7 @@ func (*ContestantService) EnqueueBenchmarkJob(e echo.Context) error {
 	if jobCount > 0 {
 		return halt(e, http.StatusForbidden, "既にベンチマークを実行中です", nil)
 	}
-	_, err = tx.Exec(
+	_, err = db.Exec(
 		"INSERT INTO `benchmark_jobs` (`team_id`, `target_hostname`, `status`, `updated_at`, `created_at`) VALUES (?, ?, ?, NOW(6), NOW(6))",
 		team.ID,
 		req.TargetHostname,
@@ -444,15 +439,12 @@ func (*ContestantService) EnqueueBenchmarkJob(e echo.Context) error {
 		return fmt.Errorf("enqueue benchmark job: %w", err)
 	}
 	var job xsuportal.BenchmarkJob
-	err = tx.Get(
+	err = db.Get(
 		&job,
 		"SELECT * FROM `benchmark_jobs` WHERE `id` = (SELECT LAST_INSERT_ID()) LIMIT 1",
 	)
 	if err != nil {
 		return fmt.Errorf("get benchmark job: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit tx: %w", err)
 	}
 	j := makeBenchmarkJobPB(&job)
 	return writeProto(e, http.StatusOK, &contestantpb.EnqueueBenchmarkJobResponse{
