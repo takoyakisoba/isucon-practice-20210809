@@ -43,7 +43,7 @@ func (b *benchmarkQueueService) ReceiveBenchmarkJob(ctx context.Context, req *be
 			}
 			defer tx.Rollback()
 
-			job, err := pollBenchmarkJob(tx)
+			job, err := pollBenchmarkJob(tx, req.TeamId)
 			if err != nil {
 				return false, fmt.Errorf("poll benchmark job: %w", err)
 			}
@@ -51,19 +51,6 @@ func (b *benchmarkQueueService) ReceiveBenchmarkJob(ctx context.Context, req *be
 				return false, nil
 			}
 
-			var gotLock bool
-			err = tx.Get(
-				&gotLock,
-				"SELECT 1 FROM `benchmark_jobs` WHERE `id` = ? AND `status` = ? FOR UPDATE",
-				job.ID,
-				resources.BenchmarkJob_PENDING,
-			)
-			if err == sql.ErrNoRows {
-				return true, nil
-			}
-			if err != nil {
-				return false, fmt.Errorf("get benchmark job with lock: %w", err)
-			}
 			randomBytes := make([]byte, 16)
 			_, err = rand.Read(randomBytes)
 			if err != nil {
@@ -71,7 +58,7 @@ func (b *benchmarkQueueService) ReceiveBenchmarkJob(ctx context.Context, req *be
 			}
 			handle := base64.StdEncoding.EncodeToString(randomBytes)
 			_, err = tx.Exec(
-				"UPDATE `benchmark_jobs` SET `status` = ?, `handle` = ? WHERE `id` = ? AND `status` = ? LIMIT 1",
+				"UPDATE `benchmark_jobs` SET `status` = ?, `handle` = ? WHERE `id` = ? AND `status` = ? LIMIT 1 ",
 				resources.BenchmarkJob_SENT,
 				handle,
 				job.ID,
@@ -81,14 +68,14 @@ func (b *benchmarkQueueService) ReceiveBenchmarkJob(ctx context.Context, req *be
 				return false, fmt.Errorf("update benchmark job status: %w", err)
 			}
 
+			if err := tx.Commit(); err != nil {
+				return false, fmt.Errorf("commit tx: %w", err)
+			}
+
 			var contestStartsAt time.Time
 			err = tx.Get(&contestStartsAt, "SELECT `contest_starts_at` FROM `contest_config` LIMIT 1")
 			if err != nil {
 				return false, fmt.Errorf("get contest starts at: %w", err)
-			}
-
-			if err := tx.Commit(); err != nil {
-				return false, fmt.Errorf("commit tx: %w", err)
 			}
 
 			jobHandle = &bench.ReceiveBenchmarkJobResponse_JobHandle{
@@ -245,7 +232,7 @@ func (b *benchmarkReportService) saveAsRunning(db sqlx.Execer, job *xsuportal.Be
 	return nil
 }
 
-func pollBenchmarkJob(db sqlx.Queryer) (*xsuportal.BenchmarkJob, error) {
+func pollBenchmarkJob(db sqlx.Queryer, team_id int64) (*xsuportal.BenchmarkJob, error) {
 	for i := 0; i < 10; i++ {
 		if i >= 1 {
 			time.Sleep(50 * time.Millisecond)
@@ -254,8 +241,9 @@ func pollBenchmarkJob(db sqlx.Queryer) (*xsuportal.BenchmarkJob, error) {
 		err := sqlx.Get(
 			db,
 			&job,
-			"SELECT * FROM `benchmark_jobs` WHERE `status` = ? ORDER BY `id` LIMIT 1",
+			"SELECT * FROM `benchmark_jobs` WHERE `status` = ? AND `team_id` = ? ORDER BY `id` LIMIT 1 FOR UPDATE SKIP LOCKED",
 			resources.BenchmarkJob_PENDING,
+			team_id,
 		)
 		if err == sql.ErrNoRows {
 			continue
