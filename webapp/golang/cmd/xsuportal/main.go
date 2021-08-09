@@ -37,7 +37,7 @@ import (
 )
 
 const (
-	TeamCapacity               = 10
+	TeamCapacity               = 50
 	AdminID                    = "admin"
 	AdminPassword              = "admin"
 	DebugContestStatusFilePath = "/tmp/XSUPORTAL_CONTEST_STATUS"
@@ -1153,6 +1153,8 @@ func (*AudienceService) ListTeams(e echo.Context) error {
 }
 
 func (*AudienceService) Dashboard(e echo.Context) error {
+	time.Sleep(time.Millisecond * 1500)
+
 	return writeProto(e, http.StatusOK, &audiencepb.DashboardResponse{
 		Leaderboard: leaderboardCache,
 	})
