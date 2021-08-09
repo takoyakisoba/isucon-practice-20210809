@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -310,16 +311,10 @@ func (*AdminService) RespondClarification(e echo.Context) error {
 		return err
 	}
 
-	tx, err := db.Beginx()
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback()
-
 	var clarificationBefore xsuportal.Clarification
-	err = tx.Get(
+	err = db.Get(
 		&clarificationBefore,
-		"SELECT * FROM `clarifications` WHERE `id` = ? LIMIT 1 FOR UPDATE",
+		"SELECT * FROM `clarifications` WHERE `id` = ? LIMIT 1",
 		id,
 	)
 	if err == sql.ErrNoRows {
@@ -331,8 +326,8 @@ func (*AdminService) RespondClarification(e echo.Context) error {
 	wasAnswered := clarificationBefore.AnsweredAt.Valid
 	wasDisclosed := clarificationBefore.Disclosed
 
-	_, err = tx.Exec(
-		"UPDATE `clarifications` SET `disclosed` = ?, `answer` = ?, `updated_at` = NOW(6), `answered_at` = NOW(6) WHERE `id` = ? LIMIT 1",
+	r, err := db.Exec(
+		"UPDATE `clarifications` SET `disclosed` = ?, `answer` = ?, `updated_at` = NOW(6), `answered_at` = NOW(6) WHERE `id` = ?  AND `answered_at` IS NULL LIMIT 1",
 		req.Disclose,
 		req.Answer,
 		id,
@@ -340,8 +335,12 @@ func (*AdminService) RespondClarification(e echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("update clarification: %w", err)
 	}
+	if r, _ := r.RowsAffected(); r == 0 {
+		return errors.New("already answered")
+	}
+
 	var clarification xsuportal.Clarification
-	err = tx.Get(
+	err = db.Get(
 		&clarification,
 		"SELECT * FROM `clarifications` WHERE `id` = ? LIMIT 1",
 		id,
@@ -350,7 +349,7 @@ func (*AdminService) RespondClarification(e echo.Context) error {
 		return fmt.Errorf("get clarification: %w", err)
 	}
 	var team xsuportal.Team
-	err = tx.Get(
+	err = db.Get(
 		&team,
 		"SELECT * FROM `teams` WHERE `id` = ? LIMIT 1",
 		clarification.TeamID,
@@ -358,13 +357,11 @@ func (*AdminService) RespondClarification(e echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("get team: %w", err)
 	}
-	c, err := makeClarificationPB(tx, &clarification, &team)
+	c, err := makeClarificationPB(db, &clarification, &team)
 	if err != nil {
 		return fmt.Errorf("make clarification: %w", err)
 	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit tx: %w", err)
-	}
+
 	updated := wasAnswered && wasDisclosed == clarification.Disclosed
 	if err := notifier.NotifyClarificationAnswered(db, &clarification, updated); err != nil {
 		return fmt.Errorf("notify clarification answered: %w", err)
