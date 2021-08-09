@@ -279,7 +279,9 @@ func main() {
 	log.Print("[INFO] listen ", address)
 
 	db, _ = xsuportal.GetDB()
-	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(100)
+	db.SetMaxOpenConns(100)
+	db.SetConnMaxLifetime(120 * time.Second)
 
 	server := grpc.NewServer()
 
