@@ -8,11 +8,13 @@ build:
 stop-services:
 	sudo systemctl stop envoy
 	sudo systemctl stop xsuportal-web-golang
+	sudo systemctl stop xsuportal-api-golang
 	sudo systemctl stop mysql
 
 start-services:
 	sudo systemctl start mysql
 	sleep 1
+	sudo systemctl start xsuportal-api-golang
 	sudo systemctl start xsuportal-web-golang
 	sleep 1
 	sudo systemctl start envoy
