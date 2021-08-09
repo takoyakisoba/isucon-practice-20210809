@@ -12,10 +12,11 @@ stop-services:
 
 start-services:
 	sudo systemctl start mysql
-	sleep 2
+	sleep 1
 	sudo systemctl start xsuportal-web-golang
-	sleep 3
+	sleep 1
 	sudo systemctl start envoy
+	sleep 3
 
 truncate-logs:
 	sudo truncate --size 0 /var/log/envoy/access.log
