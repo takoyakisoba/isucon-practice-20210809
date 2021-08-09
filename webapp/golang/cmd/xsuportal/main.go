@@ -1483,7 +1483,7 @@ func makeLeaderboardPB(teamID int64) (*resourcespb.Leaderboard, error) {
 	if err != sql.ErrNoRows && err != nil {
 		return nil, fmt.Errorf("select job results: %w", err)
 	}
-	if err := tx.Commit(); err != nil {
+	if err := tx.Rollback(); err != nil {
 		return nil, fmt.Errorf("commit tx: %w", err)
 	}
 	teamGraphScores := make(map[int64][]*resourcespb.Leaderboard_LeaderboardItem_LeaderboardScore)
