@@ -54,7 +54,7 @@ func (b *benchmarkQueueService) ReceiveBenchmarkJob(ctx context.Context, req *be
 			var gotLock bool
 			err = tx.Get(
 				&gotLock,
-				"SELECT 1 FROM `benchmark_jobs` WHERE `id` = ? AND `status` = ? FOR UPDATE",
+				"SELECT 1 FROM `benchmark_jobs` WHERE `id` = ? AND `status` = ? FOR UPDATE SKIP LOCKED",
 				job.ID,
 				resources.BenchmarkJob_PENDING,
 			)
@@ -71,7 +71,7 @@ func (b *benchmarkQueueService) ReceiveBenchmarkJob(ctx context.Context, req *be
 			}
 			handle := base64.StdEncoding.EncodeToString(randomBytes)
 			_, err = tx.Exec(
-				"UPDATE `benchmark_jobs` SET `status` = ?, `handle` = ? WHERE `id` = ? AND `status` = ? LIMIT 1",
+				"UPDATE `benchmark_jobs` SET `status` = ?, `handle` = ? WHERE `id` = ? AND `status` = ? LIMIT 1 ",
 				resources.BenchmarkJob_SENT,
 				handle,
 				job.ID,
