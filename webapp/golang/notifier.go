@@ -166,5 +166,3 @@ func (n *Notifier) notify(db sqlx.Ext, notificationPB *resources.Notification, c
 	}
 	return &notification, nil
 }
-
-
