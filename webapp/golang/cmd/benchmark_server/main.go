@@ -51,19 +51,6 @@ func (b *benchmarkQueueService) ReceiveBenchmarkJob(ctx context.Context, req *be
 				return false, nil
 			}
 
-			var gotLock bool
-			err = tx.Get(
-				&gotLock,
-				"SELECT 1 FROM `benchmark_jobs` WHERE `id` = ? AND `status` = ? FOR UPDATE SKIP LOCKED",
-				job.ID,
-				resources.BenchmarkJob_PENDING,
-			)
-			if err == sql.ErrNoRows {
-				return true, nil
-			}
-			if err != nil {
-				return false, fmt.Errorf("get benchmark job with lock: %w", err)
-			}
 			randomBytes := make([]byte, 16)
 			_, err = rand.Read(randomBytes)
 			if err != nil {
@@ -254,7 +241,7 @@ func pollBenchmarkJob(db sqlx.Queryer) (*xsuportal.BenchmarkJob, error) {
 		err := sqlx.Get(
 			db,
 			&job,
-			"SELECT * FROM `benchmark_jobs` WHERE `status` = ? ORDER BY `id` LIMIT 1",
+			"SELECT * FROM `benchmark_jobs` WHERE `status` = ? ORDER BY `id` LIMIT 1 FOR UPDATE SKIP LOCKED",
 			resources.BenchmarkJob_PENDING,
 		)
 		if err == sql.ErrNoRows {
