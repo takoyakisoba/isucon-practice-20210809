@@ -3,7 +3,7 @@
 gogo: stop-services build truncate-logs start-services bench
 
 build:
-	make -C webapp/golang
+	cd webapp/golang && make
 
 stop-services:
 	sudo systemctl stop envoy
@@ -26,4 +26,4 @@ kataribe:
 	sudo cat /var/log/envoy/access.log | ./kataribe
 
 bench:
-	# cd ../ && sh bench.sh
+	sudo systemd-run  --working-directory=/home/isucon/benchmarker  --pipe  --wait  --collect  --uid=$(id -u) --gid=$(id -g)  --slice=benchmarker.slice  --service-type=oneshot  -p AmbientCapabilities=CAP_NET_BIND_SERVICE  -p CapabilityBoundingSet=CAP_NET_BIND_SERVICE -p LimitNOFILE=2000000 -p TimeoutStartSec=110s   ~isucon/benchmarker/bin/benchmarker -exit-status  -target app.t.isucon.dev  -host-advertise bench.t.isucon.dev -push-service-port 1001
