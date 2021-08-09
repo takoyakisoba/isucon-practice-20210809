@@ -241,7 +241,7 @@ func pollBenchmarkJob(db sqlx.Queryer, team_id int64) (*xsuportal.BenchmarkJob, 
 		err := sqlx.Get(
 			db,
 			&job,
-			"SELECT * FROM `benchmark_jobs` WHERE `status` = ? AND `team_id` = ? ORDER BY `id` LIMIT 1",
+			"SELECT * FROM `benchmark_jobs` WHERE `status` = ? AND `team_id` = ? ORDER BY `id` LIMIT 1 FOR UPDATE SKIP LOCKED",
 			resources.BenchmarkJob_PENDING,
 			team_id,
 		)
