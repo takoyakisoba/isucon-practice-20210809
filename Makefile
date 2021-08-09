@@ -4,15 +4,18 @@ gogo: stop-services build truncate-logs start-services bench
 
 build:
 	cd webapp/golang && make
+	scp -C /home/isucon/isucon-practice-20210809/webapp/golang/bin/benchmark_server isucon@172.31.29.195:/home/isucon/webapp/golang/bin/benchmark_server
 
 stop-services:
 	sudo systemctl stop envoy
 	sudo systemctl stop xsuportal-web-golang
+	ssh isucon@172.31.29.195 "sudo systemctl stop xsuportal-api-golang"
 	sudo systemctl stop mysql
 
 start-services:
 	sudo systemctl start mysql
 	sleep 2
+	ssh isucon@172.31.29.195 "sudo systemctl start xsuportal-api-golang"
 	sudo systemctl start xsuportal-web-golang
 	sleep 3
 	sudo systemctl start envoy
