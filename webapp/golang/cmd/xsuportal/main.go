@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -46,6 +47,17 @@ const (
 
 var db *sqlx.DB
 var notifier xsuportal.Notifier
+var leaderboardCache *resourcespb.Leaderboard
+
+func updateLeaderboardCache() {
+	l, err := makeLeaderboardPB(0)
+	if err != nil {
+		log.Println("error", err)
+		return
+	}
+
+	leaderboardCache = l
+}
 
 func main() {
 	srv := echo.New()
@@ -117,6 +129,18 @@ func main() {
 	srv.POST("/api/signup", contestant.Signup)
 	srv.POST("/api/login", contestant.Login)
 	srv.POST("/api/logout", contestant.Logout)
+
+	go func() {
+		// キャシュ更新ラグも含めて1秒間になるよう、少し早めに更新する
+		ticker := time.NewTicker(time.Millisecond * 900)
+
+		for {
+			select {
+			case <-ticker.C:
+				go updateLeaderboardCache()
+			}
+		}
+	}()
 
 	srv.Logger.Error(srv.StartServer(srv.Server))
 }
@@ -557,7 +581,7 @@ func (*ContestantService) Dashboard(e echo.Context) error {
 		return wrapError("check session", err)
 	}
 	team, _ := getCurrentTeam(e, db, false)
-	leaderboard, err := makeLeaderboardPB(e, team.ID)
+	leaderboard, err := makeLeaderboardPB(team.ID)
 	if err != nil {
 		return fmt.Errorf("make leaderboard: %w", err)
 	}
@@ -1129,12 +1153,8 @@ func (*AudienceService) ListTeams(e echo.Context) error {
 }
 
 func (*AudienceService) Dashboard(e echo.Context) error {
-	leaderboard, err := makeLeaderboardPB(e, 0)
-	if err != nil {
-		return fmt.Errorf("make leaderboard: %w", err)
-	}
 	return writeProto(e, http.StatusOK, &audiencepb.DashboardResponse{
-		Leaderboard: leaderboard,
+		Leaderboard: leaderboardCache,
 	})
 }
 
@@ -1209,19 +1229,14 @@ func getCurrentTeam(e echo.Context, db sqlx.Queryer, lock bool) (*xsuportal.Team
 	return xc.Team, nil
 }
 
-func getCurrentContestStatus(e echo.Context, db sqlx.Queryer) (*xsuportal.ContestStatus, error) {
+func getCurrentContestStatus(db sqlx.Queryer) (*xsuportal.ContestStatus, error) {
 	var contestStatus xsuportal.ContestStatus
 	err := sqlx.Get(db, &contestStatus, "SELECT *, NOW(6) AS `current_time`, CASE WHEN NOW(6) < `registration_open_at` THEN 'standby' WHEN `registration_open_at` <= NOW(6) AND NOW(6) < `contest_starts_at` THEN 'registration' WHEN `contest_starts_at` <= NOW(6) AND NOW(6) < `contest_ends_at` THEN 'started' WHEN `contest_ends_at` <= NOW(6) THEN 'finished' ELSE 'unknown' END AS `status`, IF(`contest_starts_at` <= NOW(6) AND NOW(6) < `contest_freezes_at`, 1, 0) AS `frozen` FROM `contest_config`")
 	if err != nil {
 		return nil, fmt.Errorf("query contest status: %w", err)
 	}
 	statusStr := contestStatus.StatusStr
-	if e.Echo().Debug {
-		b, err := ioutil.ReadFile(DebugContestStatusFilePath)
-		if err == nil {
-			statusStr = string(b)
-		}
-	}
+
 	switch statusStr {
 	case "standby":
 		contestStatus.Status = resourcespb.Contest_STANDBY
@@ -1263,7 +1278,7 @@ func loginRequired(e echo.Context, db sqlx.Queryer, option *loginRequiredOption)
 }
 
 func contestStatusRestricted(e echo.Context, db sqlx.Queryer, status resourcespb.Contest_Status, message string) (bool, error) {
-	contestStatus, err := getCurrentContestStatus(e, db)
+	contestStatus, err := getCurrentContestStatus(db)
 	if err != nil {
 		return false, fmt.Errorf("get current contest status: %w", err)
 	}
@@ -1365,7 +1380,7 @@ func makeContestantPB(c *xsuportal.Contestant) *resourcespb.Contestant {
 }
 
 func makeContestPB(e echo.Context) (*resourcespb.Contest, error) {
-	contestStatus, err := getCurrentContestStatus(e, db)
+	contestStatus, err := getCurrentContestStatus(db)
 	if err != nil {
 		return nil, fmt.Errorf("get current contest status: %w", err)
 	}
@@ -1379,8 +1394,8 @@ func makeContestPB(e echo.Context) (*resourcespb.Contest, error) {
 	}, nil
 }
 
-func makeLeaderboardPB(e echo.Context, teamID int64) (*resourcespb.Leaderboard, error) {
-	contestStatus, err := getCurrentContestStatus(e, db)
+func makeLeaderboardPB(teamID int64) (*resourcespb.Leaderboard, error) {
+	contestStatus, err := getCurrentContestStatus(db)
 	if err != nil {
 		return nil, fmt.Errorf("get current contest status: %w", err)
 	}
