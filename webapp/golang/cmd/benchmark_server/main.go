@@ -81,14 +81,14 @@ func (b *benchmarkQueueService) ReceiveBenchmarkJob(ctx context.Context, req *be
 				return false, fmt.Errorf("update benchmark job status: %w", err)
 			}
 
+			if err := tx.Commit(); err != nil {
+				return false, fmt.Errorf("commit tx: %w", err)
+			}
+
 			var contestStartsAt time.Time
 			err = tx.Get(&contestStartsAt, "SELECT `contest_starts_at` FROM `contest_config` LIMIT 1")
 			if err != nil {
 				return false, fmt.Errorf("get contest starts at: %w", err)
-			}
-
-			if err := tx.Commit(); err != nil {
-				return false, fmt.Errorf("commit tx: %w", err)
 			}
 
 			jobHandle = &bench.ReceiveBenchmarkJobResponse_JobHandle{
